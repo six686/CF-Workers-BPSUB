@@ -8,7 +8,7 @@ let ips = ['3Q.bestip-one.cf.090227.xyz#感谢白嫖哥t.me/bestip_one'];
 let FileName = 'BPSUB';
 let EndPS = '';
 const regex = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[.*\]):?(\d+)?#?(.*)?$/;
-
+let hosts = [];
 export default {
     async fetch(request, env, ctx) {
         subConverter = env.SUBAPI || subConverter;
@@ -25,6 +25,14 @@ export default {
         EndPS = env.PS || EndPS;
 
         const url = new URL(request.url);
+        // 获取和处理 host 参数
+        if (url.searchParams.has('host')) {
+            hosts = url.searchParams.get('host').split('|').filter(host => host.trim());
+        } else if (env.HOST) {
+            hosts = await 整理成数组(env.HOST);
+            hosts = hosts.filter(host => host && host.trim());
+        }
+        let bphost = hosts.length > 0 ? hosts[Math.floor(Math.random() * hosts.length)].trim() : null;
         const UA = request.headers.get('User-Agent') || 'null';
         const userAgent = UA.toLowerCase();
         const 需要订阅转换的UA = ['clash', 'meta', 'mihomo', 'sing-box', 'singbox'];
@@ -34,12 +42,15 @@ export default {
             userAgent.includes('subconverter');
 
         if (url.pathname === '/sub') {
-            if (!url.searchParams.has('host')) {
-                return new Response(JSON.stringify({ error: '请提供 host 参数' }), {
+            if (!bphost) {
+                return new Response(JSON.stringify({
+                    error: '请提供有效的 host 参数',
+                    message: '可以通过 URL 参数 ?host=域名 或环境变量 HOST 提供'
+                }), {
                     status: 400,
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json; charset=utf-8' },
                 });
-            }
+            } else if (bphost.includes("*")) bphost = bphost.replace("*", Date.now().toString());
 
             subConverter = url.searchParams.get('subapi') || subConverter;
             if (subConverter.includes("http://")) {
@@ -49,13 +60,21 @@ export default {
                 subConverter = subConverter.split("//")[1] || subConverter;
             }
             subConfig = url.searchParams.get('subconfig') || subConfig;
-
-            const uuid_json = await getSubData(url.searchParams.get('host'));
+            const uuid =  url.searchParams.get('uuid') || env.UUID;
+            const uuid_json = await getLocalData(bphost, uuid);
             proxyIP = url.searchParams.get('proxyip') || proxyIP;
-            const socks5 = (url.searchParams.has('socks5') && url.searchParams.get('socks5') != '') ? url.searchParams.get('socks5') : null;
-            const 全局socks5 = (url.searchParams.has('global')) ? true : false;
-            const 最终路径 = socks5 ? (全局socks5 ? `/snippets/gs5=${socks5}?ed=2560` : `/snippets/s5=${socks5}?ed=2560`) : `/snippets/ip=${proxyIP}?ed=2560`;
 
+            let 最终路径 = `/snippets/ip=${proxyIP}?ed=2560`;
+            let socks5 = null;
+            const 全局socks5 = (url.searchParams.has('global')) ? true : false;
+            if (url.searchParams.has('socks5') && url.searchParams.get('socks5') != '') {
+                socks5 = url.searchParams.get('socks5');
+                最终路径 = 全局socks5 ? `/snippets/gs5=${socks5}?ed=2560` : `/snippets/s5=${socks5}?ed=2560`;
+            } else if (url.searchParams.has('http') && url.searchParams.get('http') == '') {
+                socks5 = url.searchParams.get('http');
+                最终路径 = 全局socks5 ? `/http=${socks5}?globalproxy&ed=2560` : `/http=${socks5}?ed=2560`;
+            }
+            
             const responseHeaders = {
                 "content-type": "text/plain; charset=utf-8",
                 "Profile-Update-Interval": `${SUBUpdateTime}`,
@@ -218,7 +237,7 @@ export default {
                 if (url.searchParams.has('ips') && url.searchParams.get('ips').trim() !== '') ips = await 整理成数组(url.searchParams.get('ips'));
 
                 const 标题 = `${url.hostname}:443#${FileName} 订阅到期时间 ${getDateString()}`;
-                let add = [标题];
+                let add = [];
                 let addapi = [];
                 for (const ip of ips) {
                     if (ip.startsWith('http') && ip.includes('://')) {
@@ -298,7 +317,7 @@ export default {
             }
 
             try {
-                const result = await getSubData(url.searchParams.get('host'));
+                const result = await getLocalData(url.searchParams.get('host'));
                 return new Response(JSON.stringify(result, null, 2), {
                     headers: { 'Content-Type': 'application/json' },
                 });
@@ -315,7 +334,7 @@ export default {
                 if (!zipResponse.ok) {
                     throw new Error('下载失败');
                 }
-                
+
                 const zipData = await zipResponse.arrayBuffer();
                 return new Response(zipData, {
                     headers: {
@@ -337,7 +356,7 @@ export default {
                 if (!jsResponse.ok) {
                     throw new Error('获取代码失败');
                 }
-                
+
                 const jsCode = await jsResponse.text();
                 return new Response(jsCode, {
                     headers: {
@@ -352,7 +371,7 @@ export default {
                 });
             }
         } else {
-            return await subHtml(request);
+            return await subHtml(request, hosts.length);
         }
     }
 };
@@ -393,6 +412,24 @@ async function getSubData(host) {
     }
 
     return result;
+}
+
+async function getLocalData(host, uuid = null) {
+    function generateUUIDv4() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            const r = Math.random() * 16 | 0;
+            const v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    const finalUUID = (uuid && uuid.trim() !== '') ? uuid.trim() : generateUUIDv4();
+    return [
+        {
+            "uuid": finalUUID,
+            "host": host
+        }
+    ];
 }
 
 async function 整理成数组(内容) {
@@ -494,7 +531,7 @@ function getDateString() {
     return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
 }
 
-async function subHtml(request) {
+async function subHtml(request, hostLength = hosts.length) {
     const HTML = `
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -1463,6 +1500,16 @@ async function subHtml(request) {
             transform: scale(0.999);
         }
         
+        #snippetCode:hover {
+            border-color: rgba(0, 255, 255, 0.4) !important;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2) !important;
+        }
+        
+        #snippetCode:active {
+            background: rgba(26, 32, 44, 0.95) !important;
+            transform: scale(0.999);
+        }
+        
         /* 选项卡响应式 */
         @media (max-width: 600px) {
             .tab-button {
@@ -1539,10 +1586,14 @@ async function subHtml(request) {
         <div class="form-container">
             <!-- 代理域名设置 -->
             <div class="section">
-                <div class="section-title">🌐 代理域名设置(必填)</div>
+                <div class="section-title">🌐 代理域名设置(${(hostLength < 1) ? '必填' : '可选'})</div>
                 <div class="form-group">
                     <label for="proxyHost">HOST：</label>
                     <input type="text" id="proxyHost" placeholder="proxy.pages.dev" value="">
+                    <div style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ff6161ff; padding: 10px; margin: 8px 0; border-radius: 6px; font-size: 13px;">
+                        <span style="color: #ff4c4cff; font-weight: 600;">🚨 需要注意：</span>
+                        <span style="color: #e2e8f0;">HOST域名直接决定节点的可用性，如果节点无法使用，请自行检查HOST域名是否被GFW屏蔽或阻断</span>
+                    </div>
                     
                     <!-- 部署教程选项卡 -->
                     <div class="tabs-container">
@@ -1552,6 +1603,9 @@ async function subHtml(request) {
                             </button>
                             <button class="tab-button" onclick="switchTab('pages')" id="pages-tab">
                                 📄 CF Pages 部署
+                            </button>
+                            <button class="tab-button" onclick="switchTab('snippets')" id="snippets-tab">
+                                📃 CF Snippets 部署
                             </button>
                         </div>
                         <div class="tab-content">
@@ -1563,7 +1617,7 @@ async function subHtml(request) {
                                 <div style="position: relative;">
                                     <textarea readonly onclick="copyWorkerCode()" style="
                                         width: 100%; 
-                                        height: 220px; 
+                                        height: 238px; 
                                         background: #1a202c; 
                                         border: 2px solid rgba(0, 255, 255, 0.2);
                                         border-radius: 8px; 
@@ -1595,7 +1649,7 @@ async function subHtml(request) {
                                 </div>
                                 <div style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 12px; margin-top: 10px; border-radius: 6px;">
                                     <span style="color: #ffc107; font-weight: 600;">⚠️ 重要提示：</span>
-                                    <span style="color: #e2e8f0;">必须绑定自定义域名（如：proxy.yourdomain.com），并优先使用自定义域名作为代理域名，这样更稳定可靠</span>
+                                    <span style="color: #e2e8f0;">必须绑定自定义域名（如：proxy.yourdomain.com），并优先使用自定义域名作为HOST代理域名，这样更稳定可靠</span>
                                 </div>
                             </div>
                             
@@ -1625,7 +1679,87 @@ async function subHtml(request) {
                                 </div>
                                 <div style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 12px; margin-top: 10px; border-radius: 6px;">
                                     <span style="color: #ffc107; font-weight: 600;">⚠️ 重要提示：</span>
-                                    <span style="color: #e2e8f0;">建议绑定自定义域名（如：proxy.yourdomain.com），并优先使用自定义域名作为代理域名，这样更稳定可靠</span>
+                                    <span style="color: #e2e8f0;">建议绑定自定义域名（如：proxy.yourdomain.com），并优先使用自定义域名作为HOST代理域名，这样更稳定可靠</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Snippets 选项卡内容 -->
+                            <div class="tab-panel" id="snippets-panel">
+                                <p style="color: #e2e8f0; margin-bottom: 15px; line-height: 1.6;">
+                                    1️⃣ 进入 规则(Rules) > Snippets → 2️⃣ 创建片段 → 3️⃣ 粘贴下方代码并部署 <br>→ 4️⃣ 片段规则 主机名 > 等于 > 自定义域名 <br>→ 5️⃣ 创建新代理DNS记录 > CNAME > 自定义域 > <strong><span onclick="copyToClipboard('cf.090227.xyz')" style="cursor: pointer; color: #00ff9d; text-decoration: underline;">cf.090227.xyz</span></strong>
+                                </p>
+                                
+                                <!-- UUID 输入框和按钮 -->
+                                <div style="margin-bottom: 20px;">
+                                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+                                        <input type="text" id="snippetUuid" placeholder="UUID为空，节点将不做连接验证" style="
+                                            flex: 1;
+                                            padding: 12px 15px;
+                                            background: rgba(26, 32, 44, 0.9);
+                                            border: 2px solid rgba(0, 255, 255, 0.2);
+                                            border-radius: 8px;
+                                            color: #e2e8f0;
+                                            font-family: 'JetBrains Mono', monospace;
+                                            font-size: 14px;
+                                            transition: all 0.3s ease;
+                                        " oninput="updateSnippetCode()" onfocus="this.style.borderColor='#00ffff'; this.style.boxShadow='0 0 0 4px rgba(0, 255, 255, 0.2)'" onblur="this.style.borderColor='rgba(0, 255, 255, 0.2)'; this.style.boxShadow='none'">
+                                        <button id="uuidButton" onclick="toggleUuid()" style="
+                                            padding: 12px 20px;
+                                            background: linear-gradient(135deg, rgba(0, 255, 157, 0.2) 0%, rgba(0, 255, 255, 0.2) 100%);
+                                            color: #00ff9d;
+                                            border: 2px solid rgba(0, 255, 157, 0.5);
+                                            border-radius: 8px;
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            cursor: pointer;
+                                            transition: all 0.3s ease;
+                                            white-space: nowrap;
+                                        " onmouseover="this.style.background='linear-gradient(135deg, rgba(0, 255, 157, 0.3) 0%, rgba(0, 255, 255, 0.3) 100%)'; this.style.borderColor='rgba(0, 255, 157, 0.7)'" 
+                                           onmouseout="updateUuidButtonStyle()">
+                                            生成UUID验证
+                                        </button>
+                                    </div>
+                                    
+                                </div>
+                                
+                                <!-- 代码显示框 -->
+                                <div style="position: relative;">
+                                    <textarea readonly onclick="copySnippetCode()" style="
+                                        width: 100%; 
+                                        height: 238px; 
+                                        background: #1a202c; 
+                                        border: 2px solid rgba(0, 255, 255, 0.2);
+                                        border-radius: 8px; 
+                                        padding: 15px; 
+                                        font-family: 'JetBrains Mono', monospace; 
+                                        font-size: 13px; 
+                                        color: #e2e8f0; 
+                                        resize: vertical;
+                                        line-height: 1.4;
+                                        cursor: pointer;
+                                        transition: all 0.3s ease;
+                                    " id="snippetCode" title="点击复制代码">正在加载代码...</textarea>
+                                    <button onclick="copySnippetCode()" style="
+                                        position: absolute;
+                                        top: 10px;
+                                        right: 10px;
+                                        background: rgba(0, 255, 255, 0.2);
+                                        color: #00ffff;
+                                        border: 1px solid rgba(0, 255, 255, 0.4);
+                                        border-radius: 6px;
+                                        padding: 6px 12px;
+                                        font-size: 12px;
+                                        cursor: pointer;
+                                        transition: all 0.3s ease;
+                                    " onmouseover="this.style.background='rgba(0, 255, 255, 0.3)'" 
+                                       onmouseout="this.style.background='rgba(0, 255, 255, 0.2)'">
+                                        📋 复制代码
+                                    </button>
+                                </div>
+                                
+                                <div style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 12px; margin-top: 10px; border-radius: 6px;">
+                                    <span style="color: #ffc107; font-weight: 600;">⚠️ 重要提示：</span>
+                                    <span style="color: #e2e8f0;">部署后需要在 Snippet 规则中设置主机名匹配你的自定义域名，并填入HOST代理域名</span>
                                 </div>
                             </div>
                         </div>
@@ -1634,41 +1768,42 @@ async function subHtml(request) {
             </div>
             
             <!-- 优选IP部分 -->
-            <div class="section">
-                <div class="section-title">⚡️ 优选IP设置(必填)</div>
-                
-                <!-- 优选IP模式选择 -->
-                <div class="form-group">
-                    <label style="margin-bottom: 15px;">选择优选IP模式：</label>
-                    <div class="proxy-mode-selector">
-                        <label class="radio-option">
-                            <input type="radio" name="ipMode" value="custom" checked onchange="toggleIPMode()">
-                            <span class="radio-label">🎯 自定义优选IP</span>
-                        </label>
-                        <label class="radio-option">
-                            <input type="radio" name="ipMode" value="subscription" onchange="toggleIPMode()">
-                            <span class="radio-label">🔗 优选订阅生成器</span>
-                        </label>
+            <div class="section collapsible collapsed">
+                <div class="section-title" onclick="toggleSection(this)">⚡️ 优选IP设置(可选)</div>
+                <div class="section-content">
+                    <!-- 优选IP模式选择 -->
+                    <div class="form-group">
+                        <label style="margin-bottom: 15px;">选择优选IP模式：</label>
+                        <div class="proxy-mode-selector">
+                            <label class="radio-option">
+                                <input type="radio" name="ipMode" value="custom" checked onchange="toggleIPMode()">
+                                <span class="radio-label">🎯 自定义优选IP</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="ipMode" value="subscription" onchange="toggleIPMode()">
+                                <span class="radio-label">🔗 优选订阅生成器</span>
+                            </label>
+                        </div>
                     </div>
-                </div>
-                
-                <!-- 自定义优选IP输入框 -->
-                <div class="form-group" id="custom-ip-group">
-                    <label for="ips">优选IP列表（每行一个地址）：</label>
-                    <textarea id="ips" placeholder="ADD示例：&#10;www.visa.cn#优选域名&#10;127.0.0.1:1234#CFnat&#10;[2606:4700::]:2053#IPv6&#10;&#10;注意：&#10;每行一个地址，格式为 地址:端口#备注&#10;IPv6地址需要用中括号括起来，如：[2606:4700::]:2053&#10;端口不写，默认为 443 端口，如：visa.cn#优选域名&#10;&#10;ADDAPI示例：&#10;https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/addressesapi.txt&#10;&#10;注意：ADDAPI直接添加直链即可"></textarea>
-                    <div class="example">📝 格式说明：
+                    
+                    <!-- 自定义优选IP输入框 -->
+                    <div class="form-group" id="custom-ip-group">
+                        <label for="ips">优选IP列表（每行一个地址）：</label>
+                        <textarea id="ips" placeholder="ADD示例：&#10;www.visa.cn#优选域名&#10;127.0.0.1:1234#CFnat&#10;[2606:4700::]:2053#IPv6&#10;&#10;注意：&#10;每行一个地址，格式为 地址:端口#备注&#10;IPv6地址需要用中括号括起来，如：[2606:4700::]:2053&#10;端口不写，默认为 443 端口，如：visa.cn#优选域名&#10;&#10;ADDAPI示例：&#10;https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/addressesapi.txt&#10;&#10;注意：ADDAPI直接添加直链即可"></textarea>
+                        <div class="example">📝 格式说明：
 • 域名&IPv4: www.visa.cn#优选域名 或 127.0.0.1:1234#CFnat
 • IPv6: [2606:4700::]:2053#IPv6地址
 • ADDAPI: https://example.com/api.txt
 • 每行一个地址，端口默认为443
+                        </div>
                     </div>
-                </div>
-                
-                <!-- 优选订阅生成器输入框 -->
-                <div class="form-group" id="subscription-generator-group" style="display: none;">
-                    <label for="subGenerator">优选订阅生成器地址：</label>
-                    <input type="text" id="subGenerator" placeholder="sub.google.com" value="">
-                    <div class="example">🔗 输入优选订阅生成器的域名地址，例如：sub.google.com
+                    
+                    <!-- 优选订阅生成器输入框 -->
+                    <div class="form-group" id="subscription-generator-group" style="display: none;">
+                        <label for="subGenerator">优选订阅生成器地址：</label>
+                        <input type="text" id="subGenerator" placeholder="sub.google.com" value="">
+                        <div class="example">🔗 输入优选订阅生成器的域名地址，例如：sub.google.com
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1762,13 +1897,13 @@ async function subHtml(request) {
                 <div class="section-content">
                     <div class="form-group">
                         <label for="subapi">订阅转换后端：</label>
-                        <input type="text" id="subapi" placeholder="https://subapi.cmliussss.net" value="">
+                        <input type="text" id="subapi" placeholder="${subProtocol}://${subConverter}" value="">
                         <div class="example">🔄 用于将生成的VLESS链接转换为Clash/SingBox等格式的后端服务
                         </div>
                     </div>
                     <div class="form-group">
                         <label for="subconfig">订阅转换配置文件：</label>
-                        <input type="text" id="subconfig" placeholder="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini.ini" value="">
+                        <input type="text" id="subconfig" placeholder="${subConfig}" value="">
                         <div class="example">📋 订阅转换时使用的配置文件URL，定义规则和策略
                         </div>
                     </div>
@@ -1810,6 +1945,10 @@ async function subHtml(request) {
         
         // 保存表单数据到localStorage
         function saveFormData() {
+            // 获取当前活跃的选项卡
+            const activeTab = document.querySelector('.tab-button.active');
+            const currentTab = activeTab ? activeTab.id.replace('-tab', '') : 'workers';
+            
             const formData = {
                 ips: document.getElementById('ips').value,
                 subGenerator: document.getElementById('subGenerator').value,
@@ -1818,9 +1957,11 @@ async function subHtml(request) {
                 socks5: document.getElementById('socks5').value,
                 subapi: document.getElementById('subapi').value,
                 subconfig: document.getElementById('subconfig').value,
+                snippetUuid: document.getElementById('snippetUuid') ? document.getElementById('snippetUuid').value : '',
                 proxyMode: document.querySelector('input[name="proxyMode"]:checked')?.value || 'proxyip',
                 ipMode: document.querySelector('input[name="ipMode"]:checked')?.value || 'custom',
                 globalSocks5: document.getElementById('globalSocks5').checked,
+                activeTab: currentTab, // 保存当前选中的选项卡
                 timestamp: Date.now()
             };
             
@@ -1852,6 +1993,12 @@ async function subHtml(request) {
                 if (formData.socks5) document.getElementById('socks5').value = formData.socks5;
                 if (formData.subapi) document.getElementById('subapi').value = formData.subapi;
                 if (formData.subconfig) document.getElementById('subconfig').value = formData.subconfig;
+                if (formData.snippetUuid && document.getElementById('snippetUuid')) {
+                    document.getElementById('snippetUuid').value = formData.snippetUuid;
+                    // 更新按钮状态和代码
+                    updateUuidButtonStyle();
+                    updateSnippetCode();
+                }
                 
                 // 设置IP模式
                 if (formData.ipMode) {
@@ -1871,6 +2018,12 @@ async function subHtml(request) {
                     }
                 }
                 
+                // 恢复选项卡状态
+                if (formData.activeTab) {
+                    console.log('恢复选项卡状态:', formData.activeTab);
+                    switchTab(formData.activeTab);
+                }
+                
                 // 设置全局Socks5选项
                 if (formData.globalSocks5 !== undefined) {
                     document.getElementById('globalSocks5').checked = formData.globalSocks5;
@@ -1888,7 +2041,7 @@ async function subHtml(request) {
         
         // 设置表单字段的自动保存事件监听器
         function setupAutoSave() {
-            const fields = ['ips', 'subGenerator', 'proxyHost', 'proxyip', 'socks5', 'subapi', 'subconfig'];
+            const fields = ['ips', 'subGenerator', 'proxyHost', 'proxyip', 'socks5', 'subapi', 'subconfig', 'snippetUuid'];
             
             // 为文本输入字段添加事件监听
             fields.forEach(fieldId => {
@@ -1969,10 +2122,21 @@ async function subHtml(request) {
             const socks5 = document.getElementById('socks5').value.trim();
             const subapi = document.getElementById('subapi').value.trim();
             const subconfig = document.getElementById('subconfig').value.trim();
+            const hostLength = ${hostLength};
+            
+            // 获取当前选中的选项卡
+            const activeTab = document.querySelector('.tab-button.active');
+            const currentTab = activeTab ? activeTab.id.replace('-tab', '') : 'workers';
             
             // 检查代理域名是否为空
-            if (!proxyHost) {
+            if (!proxyHost && hostLength < 1) {
                 alert('⚠️ 代理域名不能为空！\\n\\n请输入代理域名，例如：proxy.pages.dev');
+                return;
+            }
+            
+            // 特别检查：CF Snippets 部署必须要有 HOST
+            if (currentTab === 'snippets' && !proxyHost) {
+                alert('⚠️ 使用 CF Snippets 部署时，HOST 域名不能为空！\\n\\n请输入你的自定义域名，Snippets 规则需要匹配具体的主机名。\\n\\n例如：proxy.yourdomain.com');
                 return;
             }
             
@@ -1989,8 +2153,7 @@ async function subHtml(request) {
             
             const params = new URLSearchParams();
             
-            // 添加代理域名参数
-            params.append('host', proxyHost);
+            if (proxyHost) params.append('host', proxyHost);
             
             // 根据IP模式处理参数
             if (ipMode === 'subscription') {
@@ -2050,6 +2213,14 @@ async function subHtml(request) {
             // 处理订阅转换配置
             if (subconfig) {
                 params.append('subconfig', subconfig);
+            }
+            
+            // 检查是否选择了 Snippets 部署且有 UUID
+            if (activeTab && activeTab.id === 'snippets-tab') {
+                const snippetUuid = document.getElementById('snippetUuid').value.trim();
+                if (snippetUuid) {
+                    params.append('uuid', snippetUuid);
+                }
             }
             
             // 组合最终URL
@@ -2129,21 +2300,35 @@ async function subHtml(request) {
             });
         }
         
-        function copyToClipboard(elementId = 'subscriptionLink') {
-            const resultUrl = document.getElementById(elementId);
-            const url = resultUrl.textContent;
+        function copyToClipboard(elementIdOrText = 'subscriptionLink') {
+            let url, element;
+            
+            // 判断参数是元素ID还是直接的文本
+            if (document.getElementById(elementIdOrText)) {
+                // 如果是元素ID
+                element = document.getElementById(elementIdOrText);
+                url = element.textContent;
+            } else {
+                // 如果是直接的文本
+                url = elementIdOrText;
+                element = null;
+            }
             
             // 使用 Clipboard API
             if (navigator.clipboard && window.isSecureContext) {
                 navigator.clipboard.writeText(url).then(() => {
-                    showCopySuccess(resultUrl);
+                    if (element) {
+                        showCopySuccess(element);
+                    } else {
+                        showToast('✅ 复制成功！' + url + ' 已复制到剪贴板');
+                    }
                 }).catch(err => {
                     // 降级到传统方法
-                    fallbackCopyTextToClipboard(url, resultUrl);
+                    fallbackCopyTextToClipboard(url, element);
                 });
             } else {
                 // 降级到传统方法
-                fallbackCopyTextToClipboard(url, resultUrl);
+                fallbackCopyTextToClipboard(url, element);
             }
         }
         
@@ -2162,7 +2347,11 @@ async function subHtml(request) {
             
             try {
                 document.execCommand('copy');
-                showCopySuccess(element);
+                if (element) {
+                    showCopySuccess(element);
+                } else {
+                    showToast('✅ 复制成功！' + text + ' 已复制到剪贴板');
+                }
             } catch (err) {
                 alert('复制失败，请手动复制链接');
             }
@@ -2181,6 +2370,26 @@ async function subHtml(request) {
                 element.className = originalClass;
                 element.textContent = originalText;
             }, 2000);
+        }
+        
+        function showToast(message) {
+            // 创建toast元素
+            const toast = document.createElement('div');
+            toast.textContent = message;
+            toast.style.cssText = 'position: fixed; top: 20px; right: 20px; background: rgba(0, 255, 157, 0.9); color: #1a202c; padding: 12px 20px; border-radius: 8px; font-weight: 600; z-index: 10000; box-shadow: 0 4px 12px rgba(0, 255, 157, 0.3); transition: all 0.3s ease;';
+            
+            document.body.appendChild(toast);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
+                }, 300);
+            }, 3000);
         }
         
         // 生成二维码
@@ -2221,6 +2430,9 @@ async function subHtml(request) {
             // 激活当前选项卡
             document.getElementById(tabName + '-tab').classList.add('active');
             document.getElementById(tabName + '-panel').classList.add('active');
+            
+            // 保存当前选项卡状态到缓存
+            saveFormData();
         }
         
         // 加载Worker代码
@@ -2277,6 +2489,143 @@ async function subHtml(request) {
             
             // 显示下载提示
             showDownloadSuccess();
+        }
+
+        // UUID 生成函数
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // UUID 按钮切换函数
+        function toggleUuid() {
+            const uuidInput = document.getElementById('snippetUuid');
+            const uuidButton = document.getElementById('uuidButton');
+            
+            if (uuidInput.value.trim() === '') {
+                // 生成随机 UUID
+                uuidInput.value = generateUUID();
+                updateUuidButtonStyle();
+                updateSnippetCode();
+            } else {
+                // 清除 UUID
+                uuidInput.value = '';
+                updateUuidButtonStyle();
+                updateSnippetCode();
+            }
+        }
+
+        // 更新 UUID 按钮样式和文本
+        function updateUuidButtonStyle() {
+            const uuidInput = document.getElementById('snippetUuid');
+            const uuidButton = document.getElementById('uuidButton');
+            
+            if (uuidInput.value.trim() === '') {
+                uuidButton.textContent = '生成UUID验证';
+                uuidButton.style.background = 'linear-gradient(135deg, rgba(0, 255, 157, 0.2) 0%, rgba(0, 255, 255, 0.2) 100%)';
+                uuidButton.style.borderColor = 'rgba(0, 255, 157, 0.5)';
+                uuidButton.style.color = '#00ff9d';
+            } else {
+                uuidButton.textContent = '取消UUID验证';
+                uuidButton.style.background = 'linear-gradient(135deg, rgba(255, 99, 71, 0.2) 0%, rgba(255, 165, 0, 0.2) 100%)';
+                uuidButton.style.borderColor = 'rgba(255, 99, 71, 0.5)';
+                uuidButton.style.color = '#ff6347';
+            }
+        }
+
+        let snippetCodeCache = '';
+
+        // 加载 Snippet 代码
+        async function loadSnippetCode() {
+            try {
+                const response = await fetch('https://raw.githubusercontent.com/cmliu/CF-Workers-BPSUB/main/snippet/v.js');
+                if (!response.ok) {
+                    throw new Error('获取代码失败');
+                }
+                const code = await response.text();
+                snippetCodeCache = code;
+                updateSnippetCode();
+            } catch (error) {
+                console.error('加载Snippet代码失败:', error);
+                document.getElementById('snippetCode').value = '加载代码失败，请自行从\\nhttps://raw.githubusercontent.com/cmliu/CF-Workers-BPSUB/main/snippet/v.js\\n获取最新代码';
+            }
+        }
+
+        // 更新 Snippet 代码
+        function updateSnippetCode() {
+            const uuidInput = document.getElementById('snippetUuid');
+            const snippetCodeElement = document.getElementById('snippetCode');
+            
+            if (snippetCodeCache) {
+                const uuid = uuidInput.value.trim();
+                let updatedCode = snippetCodeCache;
+                
+                // 替换第一行的 FIXED_UUID 值
+                const firstLine = "const FIXED_UUID = '';";
+                const newFirstLine = \`const FIXED_UUID = '\${uuid}';\`;
+                updatedCode = updatedCode.replace(firstLine, newFirstLine);
+                
+                snippetCodeElement.value = updatedCode;
+            }
+        }
+
+        // 复制 Snippet 代码
+        function copySnippetCode() {
+            const snippetCodeElement = document.getElementById('snippetCode');
+            const code = snippetCodeElement.value;
+            
+            // 添加点击视觉反馈
+            snippetCodeElement.style.background = 'rgba(0, 255, 255, 0.1)';
+            snippetCodeElement.style.borderColor = 'rgba(0, 255, 255, 0.6)';
+            
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(code).then(() => {
+                    showCopySuccessForSnippetCodeBox();
+                }).catch(err => {
+                    fallbackCopyTextToClipboard(code, snippetCodeElement);
+                    showCopySuccessForSnippetCodeBox();
+                });
+            } else {
+                fallbackCopyTextToClipboard(code, snippetCodeElement);
+                showCopySuccessForSnippetCodeBox();
+            }
+        }
+
+        // 显示复制成功（针对 Snippet 代码框）
+        function showCopySuccessForSnippetCodeBox() {
+            const snippetCodeElement = document.getElementById('snippetCode');
+            const button = snippetCodeElement.nextElementSibling;
+            
+            // 更新代码框样式
+            snippetCodeElement.style.background = 'rgba(0, 255, 157, 0.15)';
+            snippetCodeElement.style.borderColor = '#00ff9d';
+            snippetCodeElement.style.boxShadow = '0 0 15px rgba(0, 255, 157, 0.3)';
+            
+            // 更新按钮
+            if (button) {
+                const originalText = button.textContent;
+                button.textContent = '✅ 已复制!';
+                button.style.background = 'rgba(0, 255, 157, 0.3)';
+                button.style.borderColor = '#00ff9d';
+                button.style.color = '#00ff9d';
+                
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = 'rgba(0, 255, 255, 0.2)';
+                    button.style.borderColor = 'rgba(0, 255, 255, 0.4)';
+                    button.style.color = '#00ffff';
+                }, 2000);
+            }
+            
+            // 恢复代码框样式
+            setTimeout(() => {
+                snippetCodeElement.style.background = '#1a202c';
+                snippetCodeElement.style.borderColor = 'rgba(0, 255, 255, 0.2)';
+                snippetCodeElement.style.boxShadow = 'none';
+            }, 2000);
         }
         
         // 显示复制成功（针对按钮）
@@ -2560,6 +2909,12 @@ async function subHtml(request) {
             
             // 加载Worker代码
             loadWorkerCode();
+            
+            // 加载Snippet代码
+            loadSnippetCode();
+            
+            // 初始化 UUID 按钮样式
+            updateUuidButtonStyle();
             
             // 首先加载缓存的表单数据
             loadFormData();

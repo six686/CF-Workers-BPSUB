@@ -47,6 +47,7 @@ CF-Workers-BPSUB 是一个基于 Cloudflare Workers 的轻量级 VLESS 代理订
 
 | 变量名 | 说明 |  示例 |
 |--------|------|---------------|
+| `HOST` | 可内置白嫖反代HOST，多元素使用`换行`或`,`做间隔 | `baipiao.cmliussss.abrdns.com` |
 | `SUBAPI` | 订阅转换后端地址 | `SUBAPI.CMLiussss.net` |
 | `SUBCONFIG` | 订阅转换配置文件 | `https://example.com/config.ini` |
 | `PROXYIP` | 默认代理IP地址 |  `proxyip.fxxk.dedyn.io:443` |
@@ -210,4 +211,5 @@ A: 设置 `PS` 环境变量，或在优选IP中使用 `#备注` 格式
 
 - **Cloudflare Workers**：提供优秀的 Serverless 平台
 - **[白嫖哥](https://t.me/bestip_one)**：提供高质量的免费节点服务
+- ~~fftk~~
 - [肥羊短链](https://suburl.v1.mk/)：感谢提供免费短链服务
