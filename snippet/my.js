@@ -7,6 +7,7 @@ let 我的SOCKS5账号 = '';
 export default {
     async fetch(request) {
         const url = new URL(request.url);
+        反代IP = 反代IP ? 反代IP : request.cf.colo + atob('LnByb3h5aXAuY21saXVzc3NzLm5ldA==');
         我的SOCKS5账号 = url.searchParams.get('socks5') || url.searchParams.get('http');
         启用SOCKS5全局反代 = url.searchParams.has('globalproxy');
         if (url.pathname.toLowerCase().includes('/socks5=') || (url.pathname.includes('/s5=')) || (url.pathname.includes('/gs5='))) {
@@ -77,7 +78,7 @@ async function handleXhttp(request) {
     if (!vlessHeader) return new Response('Invalid VLESS header', {
         status: 400
     });
-
+    if (vlessHeader.hostname.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
     // 连接到远程
     let remote = null;
     if (启用SOCKS5反代 == 'socks5' && 启用SOCKS5全局反代) {
@@ -200,6 +201,7 @@ async function handleWebSocket(request) {
             }
 
             const view = new DataView(data);
+            const version = view.getUint8(0); // 提取版本号
             const optLen = view.getUint8(17);
             const cmd = view.getUint8(18 + optLen);
             if (cmd !== 1 && cmd !== 2) return;
@@ -223,8 +225,8 @@ async function handleWebSocket(request) {
                 for (let i = 0; i < 8; i++, pos += 2) ipv6.push(view.getUint16(pos).toString(16));
                 addr = ipv6.join(':');
             } else return;
-
-            const header = new Uint8Array([data[0], 0]);
+            if (addr.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
+            const header = new Uint8Array([version, 0]); // 使用提取的版本号
             const payload = data.slice(pos);
 
             // UDP DNS
@@ -381,7 +383,7 @@ async function readVlessHeader(reader) {
 
         // 跳过版本和UUID(17字节)，读取addon长度
         if (offset < 18) continue;
-        
+
         // UUID验证
         if (FIXED_UUID) {
             const uuidBytes = parseUUID(FIXED_UUID);
@@ -389,7 +391,7 @@ async function readVlessHeader(reader) {
                 return null;
             }
         }
-        
+
         const addonLen = buffer[17];
         if (offset < 18 + addonLen + 1) continue;
         const cmd = buffer[18 + addonLen];
@@ -429,11 +431,13 @@ async function readVlessHeader(reader) {
 
         const headerLen = hostIndex + hostLen;
         const data = buffer.slice(headerLen, offset);
+        const version = buffer[0]; // 提取版本号
         return {
             hostname,
             port,
             data,
-            resp: new Uint8Array([buffer[0], 0]),
+            version,
+            resp: new Uint8Array([version, 0]), // 使用实际版本号而不是 buffer[0]
             reader
         };
     }
@@ -494,9 +498,7 @@ async function 获取SOCKS5账号(address) {
 function 解析地址端口(反代IP) {
     const proxyIP = 反代IP.toLowerCase();
     let 地址 = proxyIP, 端口 = 443;
-    if (!proxyIP || proxyIP == '') {
-        地址 = 'proxyip.fxxk.dedyn.io'; //默认反代
-    } else if (proxyIP.includes(']:')) {
+    if (proxyIP.includes(']:')) {
         端口 = proxyIP.split(']:')[1] || 端口;
         地址 = proxyIP.split(']:')[0] + "]" || 地址;
     } else if (proxyIP.split(':').length === 2) {

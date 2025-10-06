@@ -13,6 +13,7 @@ let 传输控流大小 = 64; //单位字节，相当于分片大小
 //////////////////////////////////////////////////////////////////////////主要架构////////////////////////////////////////////////////////////////////////
 export default {
     async fetch(访问请求) {
+        反代IP = 反代IP ? 反代IP : 访问请求.cf.colo + atob('LnByb3h5aXAuY21saXVzc3NzLm5ldA==');
         if (访问请求.headers.get('Upgrade') === 'websocket') {
             const url = new URL(访问请求.url);
             我的SOCKS5账号 = url.searchParams.get('socks5') || url.searchParams.get('http');
@@ -67,7 +68,6 @@ export default {
 
             const [客户端, WS接口] = Object.values(new WebSocketPair());
             WS接口.accept();
-            WS接口.send(new Uint8Array([0, 0]));
             启动传输管道(WS接口);
             return new Response(null, { status: 101, webSocket: 客户端 }); //一切准备就绪后，回复客户端WS连接升级成功
         } else {
@@ -92,8 +92,10 @@ async function 启动传输管道(WS接口, TCP接口) {
         });
         async function 解析首包数据(首包数据) {
             const 二进制数据 = new Uint8Array(首包数据);
+            const 版本号 = 二进制数据[0];
             const 验证VL的密钥 = (a, i = 0) => [...a.slice(i, i + 16)].map(b => b.toString(16).padStart(2, '0')).join('').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
             if (FIXED_UUID && 验证VL的密钥(二进制数据.slice(1, 17)) !== FIXED_UUID) throw new Error('UUID验证失败');
+            WS接口.send(new Uint8Array([版本号, 0]));
             const 提取端口索引 = 18 + 二进制数据[17] + 1;
             const 访问端口 = new DataView(二进制数据.buffer, 提取端口索引, 2).getUint16(0);
             if (访问端口 === 53) { //这个处理是应对某些客户端优先强制查询dns的情况，通过加密通道udp over tcp的
@@ -134,6 +136,7 @@ async function 启动传输管道(WS接口, TCP接口) {
                 default:
                     throw new Error('无效的访问地址');
             }
+            if (访问地址.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
             if (启用SOCKS5反代 == 'socks5' && 启用SOCKS5全局反代) {
                 TCP接口 = await 创建SOCKS5接口(识别地址类型, 访问地址, 访问端口);
             } else if (启用SOCKS5反代 == 'http' && 启用SOCKS5全局反代) {
@@ -198,7 +201,7 @@ globalThis.DNS缓存记录 = globalThis.DNS缓存记录 ??= new Map();
 async function 创建SOCKS5接口(识别地址类型, 访问地址, 访问端口, 转换访问地址, 传输数据, 读取数据) {
     let SOCKS5接口, 账号, 密码, 地址, 端口;
     try {
-        ({ 账号, 密码, 地址, 端口 } = await 获取SOCKS5账号(我的SOCKS5账号));
+        ({ username: 账号, password: 密码, hostname: 地址, port: 端口 } = await 获取SOCKS5账号(我的SOCKS5账号));
         SOCKS5接口 = connect({ hostname: 地址, port: 端口 });
         await SOCKS5接口.opened;
         传输数据 = SOCKS5接口.writable.getWriter();
@@ -315,9 +318,7 @@ async function 获取SOCKS5账号(address) {
 function 解析地址端口(反代IP) {
     const proxyIP = 反代IP.toLowerCase();
     let 地址 = proxyIP, 端口 = 443;
-    if (!proxyIP || proxyIP == '') {
-        地址 = 'proxyip.fxxk.dedyn.io'; //默认反代
-    } else if (proxyIP.includes(']:')) {
+    if (proxyIP.includes(']:')) {
         端口 = proxyIP.split(']:')[1] || 端口;
         地址 = proxyIP.split(']:')[0] + "]" || 地址;
     } else if (proxyIP.split(':').length === 2) {
